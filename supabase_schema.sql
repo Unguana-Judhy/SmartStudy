@@ -50,3 +50,31 @@ create policy "materials: alterar os proprios ficheiros" on storage.objects
 create policy "materials: apagar os proprios ficheiros" on storage.objects
   for delete to authenticated
   using (bucket_id = 'materials' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- 3) Limite diário da leitura por IA (usado por api/read.js)
+-- Para mudar o limite, altere o número 20 abaixo e volte a correr este bloco.
+create table if not exists public.ai_usage (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  day     date not null default ((now() at time zone 'utc')::date),
+  n       int  not null default 0,
+  primary key (user_id, day)
+);
+alter table public.ai_usage enable row level security;   -- sem políticas: ninguém lê nem escreve directamente
+revoke all on public.ai_usage from anon, authenticated;
+
+create or replace function public.use_ai() returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  cur int;
+begin
+  if auth.uid() is null then return false; end if;
+  insert into public.ai_usage (user_id, day, n)
+  values (auth.uid(), (now() at time zone 'utc')::date, 1)
+  on conflict (user_id, day) do update set n = public.ai_usage.n + 1
+    where public.ai_usage.n < 20
+  returning n into cur;
+  return cur is not null;
+end $$;
+
+revoke all on function public.use_ai() from public, anon;
+grant execute on function public.use_ai() to authenticated;

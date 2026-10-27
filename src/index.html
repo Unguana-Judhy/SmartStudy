@@ -301,6 +301,8 @@ function build(){S={};IDS=[];UNTIL={};const per={};
     IDS.push(x.id);if(x.until)UNTIL[x.id]=x.until});
   IDS.forEach(i=>S[i].pre.forEach(p=>S[p].dep.push(i)));
   TOTAL_CR=IDS.reduce((a,i)=>a+S[i].cr,0)}
+const MAXSEM=20;
+const canDelSem=()=>state.nsem>1&&state.currentSem<state.nsem&&!state.subjects.some(x=>x.sem===state.nsem)&&!state.classes.some(c=>c.sem===state.nsem);
 const SEMS=()=>Array.from({length:state.nsem},(_,i)=>i+1);
 const emptyPg=t=>`<div class="head"><div><h1>${t}</h1></div></div><div class="empty">Primeiro adicione as suas disciplinas.<br><button class="btn" style="margin-top:12px" data-act="nav" data-r="disciplinas">Ir para Disciplinas</button></div>`;
 
@@ -529,6 +531,7 @@ const ROUTES=[
  ['plano','Plano de Estudo','target'],['estatisticas','Estatísticas','chart'],['definicoes','Definições','sliders']];
 const TITLES={inicio:'SmartStudy',disciplinas:'Disciplinas',horario:'Horário Semestral',precedencias:'Disciplinas e Precedências',materiais:'Biblioteca de Materiais',avaliacoes:'Avaliações e Notas',notas:'Notas e Desempenho',plano:'Plano de Estudo',estatisticas:'Estatísticas',definicoes:'Definições'};
 const semOpts=sel=>SEMS().map(n=>`<option value="${n}" ${n===sel?'selected':''}>${n}º Semestre</option>`).join('');
+const subjOptsG=sel=>SEMS().map(n=>{const l=IDS.filter(i=>S[i].sem===n);return l.length?`<optgroup label="${n}º semestre${n===state.currentSem?' (actual)':''}">${l.map(i=>`<option value="${i}" ${i===sel?'selected':''}>${esc(S[i].name)}${state.enrolled.includes(i)?' · inscrita':''}</option>`).join('')}</optgroup>`:''}).join('');
 const subjOpts=(sel,list)=>(list||state.enrolled).map(i=>`<option value="${i}" ${i===sel?'selected':''}>${esc(S[i].name)}</option>`).join('');
 
 function authShell(card){
@@ -557,7 +560,8 @@ function pgAuth(){
     ${m!=='reset'?fld('a-p',m==='newpw'?'Nova palavra-passe':'Palavra-passe','pw',a.pw,'password','Mínimo de 8 caracteres',m==='login'?'current-password':'new-password'):''}
     ${m==='signup'||m==='newpw'?fld('a-p2','Confirmar palavra-passe','pw2',a.pw2,'password','Repita a palavra-passe','new-password'):''}
     ${a.err?`<div class="hint warn" role="alert">${ic('alert')}<div>${esc(a.err)}</div></div>`:''}
-    <button class="btn block" type="submit" ${a.busy?'disabled':''}>${a.busy?'A processar…':T[2]}</button>
+    <button class="btn block" type="submit" ${a.busy||(a.until||0)>Date.now()?'disabled':''}>${a.busy?'A processar…':(a.until||0)>Date.now()?'Tente de novo em '+Math.ceil((a.until-Date.now())/1000)+' s':T[2]}</button>
+    ${m==='login'&&a.needConfirm?`<p class="small muted" style="text-align:center;margin:0"><button type="button" class="link" data-act="resend">Reenviar email de confirmação</button></p>`:''}
     ${m==='login'?`<p class="small muted" style="text-align:center;margin:0"><button type="button" class="link" data-act="auth-mode" data-k="reset">Esqueci a palavra-passe</button></p>`:''}
     ${m!=='newpw'?`<p class="small muted" style="text-align:center;margin:0">${m==='signup'?'Já tem conta?':m==='reset'?'Lembrou-se?':'Ainda não tem conta?'} <button type="button" class="link" data-act="auth-mode" data-k="${m==='login'?'signup':'login'}">${m==='login'?'Criar conta':'Entrar'}</button></p>`:''}
   </form>`);
@@ -574,14 +578,16 @@ function pgSetup(){
     <div><h2>Quase lá</h2><div class="sub">Diga-nos qual é o seu curso. Depois crie as suas disciplinas, horários e avaliações.</div></div>
     ${t('s-n','O seu nome','setup.name',u.name,'Nome completo')}${t('s-u','Universidade','setup.uni',u.uni,'Nome da universidade')}${t('s-c','O seu curso','setup.course',u.course,'Nome do curso')}
     <div class="grid g2">
-      <div class="field"><label for="s-t">Duração (semestres)</label><div class="inp"><select id="s-t" data-model="setup.nsem">${[...Array(13)].map((_,i)=>`<option value="${i+2}" ${u.nsem===i+2?'selected':''}>${i+2} semestres</option>`).join('')}</select></div></div>
+      <div class="field"><label for="s-t">Duração (semestres)</label><div class="inp"><select id="s-t" data-model="setup.nsem">${[...Array(MAXSEM)].map((_,i)=>`<option value="${i+1}" ${u.nsem===i+1?'selected':''}>${i+1} ${i?'semestres':'semestre'}</option>`).join('')}</select></div></div>
       <div class="field"><label for="s-s">Semestre actual</label><div class="inp"><select id="s-s" data-model="setup.cur">${opt(u.nsem,u.cur)}</select></div></div>
     </div>
     <button class="btn block" type="submit">Começar</button>
     <p class="small muted" style="text-align:center;margin:0">Conta: ${esc(SESSION||'')} · <button type="button" class="link" data-act="logout">Terminar sessão</button></p>
   </form>`);
 }
-const PT=m=>{m=(m||'').toLowerCase();
+const PT=(m,err)=>{const code=String((err&&err.code)||''),st=err&&err.status;m=(m||'').toLowerCase();
+  if(code==='over_email_send_rate_limit'||m.includes('email rate limit'))return 'Há muitos pedidos de email neste momento (o servidor limita os envios). Aguarde alguns minutos e tente de novo.';
+  if(code==='over_request_rate_limit'||st===429)return 'Há demasiados pedidos a partir desta ligação. Aguarde alguns minutos e tente de novo.';
   if(m.includes('invalid login'))return 'Email ou palavra-passe incorrectos.';
   if(m.includes('not confirmed'))return 'Confirme primeiro o seu email: abra o link que lhe enviámos.';
   if(m.includes('already registered'))return 'Já existe uma conta com este email. Entre ou recupere a palavra-passe.';
@@ -614,17 +620,19 @@ async function doAuth(){
   if((m==='signup'||m==='newpw')&&a.pw!==a.pw2){a.err='As palavras-passe não coincidem.';return render()}
   a.busy=true;render();
   try{
-    if(m==='login'){const {error}=await sb.auth.signInWithPassword({email,password:a.pw});if(error)a.err=PT(error.message)}
+    if(m==='login'){const {error}=await sb.auth.signInWithPassword({email,password:a.pw});if(error){a.err=PT(error.message,error);a.needConfirm=/not confirmed/i.test(error.message)}else a.needConfirm=false}
     else if(m==='signup'){const {data,error}=await sb.auth.signUp({email,password:a.pw,options:{emailRedirectTo:redirectUrl()}});
-      if(error)a.err=PT(error.message);
+      if(error)a.err=PT(error.message,error);
       else if(data.user&&data.user.identities&&data.user.identities.length===0)a.err='Já existe uma conta com este email. Entre ou recupere a palavra-passe.';
       else if(!data.session){a.mode='notice';a.notice='Enviámos um email de confirmação para '+email+'. Abra o link para activar a conta e depois entre. Veja também a pasta de spam.'}}
     else if(m==='reset'){const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:redirectUrl()});
-      if(error&&/rate|many|security/i.test(error.message))a.err=PT(error.message);else{a.mode='notice';a.notice='Se existir uma conta com '+email+', enviámos-lhe um link para criar uma nova palavra-passe.'}}
-    else if(m==='newpw'){const {error}=await sb.auth.updateUser({password:a.pw});if(error)a.err=PT(error.message);else{a.mode='login';toast('Palavra-passe actualizada.');try{history.replaceState(null,'',redirectUrl())}catch(e){}}}
-  }catch(e){a.err=PT(e&&e.message)}
-  a.busy=false;a.pw=a.pw2='';render();
+      if(error&&/rate|many|security/i.test(error.message))a.err=PT(error.message,error);else{a.mode='notice';a.notice='Se existir uma conta com '+email+', enviámos-lhe um link para criar uma nova palavra-passe.'}}
+    else if(m==='newpw'){const {error}=await sb.auth.updateUser({password:a.pw});if(error)a.err=PT(error.message,error);else{a.mode='login';toast('Palavra-passe actualizada.');try{history.replaceState(null,'',redirectUrl())}catch(e){}}}
+  }catch(e){a.err=PT(e&&e.message,e)}
+  a.busy=false;a.pw=a.pw2='';if(a.err&&/Aguarde alguns minutos/.test(a.err))coolDown(60);render();
 }
+function coolDown(sec){ui.auth.until=Date.now()+sec*1000;clearInterval(coolDown.t);coolDown.t=setInterval(()=>{const left=Math.ceil((ui.auth.until-Date.now())/1000),b=document.querySelector('form[data-form="auth"] button[type=submit]');if(left<=0){clearInterval(coolDown.t);ui.auth.until=0;render();return}if(b){b.disabled=true;b.textContent='Tente de novo em '+left+' s'}},1000)}
+async function resendConfirm(){const a=ui.auth,email=(a.email||'').trim().toLowerCase();if(!email)return;a.err='';try{const {error}=await sb.auth.resend({type:'signup',email,options:{emailRedirectTo:redirectUrl()}});if(error){a.err=PT(error.message,error);if(/Aguarde alguns minutos/.test(a.err))coolDown(60)}else{a.mode='notice';a.notice='Reenviámos o email de confirmação para '+email+'. Veja também a pasta de spam.'}}catch(e){a.err=PT(e&&e.message,e)}render()}
 async function changePw(){
   const p=ui.pw;p.err='';
   if((p.nw||'').length<8){p.err='A nova palavra-passe deve ter pelo menos 8 caracteres.';return render()}
@@ -689,7 +697,7 @@ function pgInicio(){
 function pgDisciplinas(){
   const n=ui.semTab,list=IDS.filter(i=>S[i].sem===n),cr=list.reduce((a,i)=>a+S[i].cr,0);
   return `<div class="head"><div><h1>Disciplinas</h1><p>${esc(state.user.course)} · ${cr} créditos neste semestre</p></div><div class="row wrap"><button class="btn ghost" data-act="enrol-open">${ic('check')}Inscrever</button><label class="btn ghost" style="cursor:pointer">${ic('upload')}Importar PDF/Excel<input type="file" id="import-subj-file" accept=".pdf,.xlsx,.csv,image/*" style="display:none" data-change="import-subj"></label><button class="btn" data-act="sform">${ic('plus')}Nova disciplina</button></div></div>
-  <div class="tabs" role="tablist">${SEMS().map(s=>`<button role="tab" aria-selected="${s===n}" data-act="semtab" data-n="${s}">Semestre ${s}${s===state.currentSem?' •':''}</button>`).join('')}</div>
+  <div class="tabs" role="tablist">${SEMS().map(s=>`<button role="tab" aria-selected="${s===n}" data-act="semtab" data-n="${s}">Semestre ${s}${s===state.currentSem?' •':''}</button>`).join('')}${state.nsem<MAXSEM?`<button role="tab" aria-selected="false" data-act="sem-add" aria-label="Adicionar semestre">+ Semestre</button>`:''}</div>${canDelSem()?`<div><button class="btn ghost sm" data-act="sem-del">Remover o ${state.nsem}º semestre (vazio)</button></div>`:''}
   <div class="list">${list.length?list.map(i=>`<button class="item" data-act="subj" data-id="${i}"><div class="grow"><div class="code">${S[i].code}</div><div class="t">${esc(S[i].name)}</div><div class="s">${S[i].cr} créditos${S[i].pre.length?' · Precedente: '+S[i].pre.map(p=>esc(S[p].name)).join(', '):UNTIL[i]?' · '+ruleText(i):''}</div></div>${isLate(i)?'<span class="chip bad">Em atraso</span>':''}${chip(i)}${ic('cr')}</button>`).join(''):`<div class="empty">Ainda não há disciplinas no ${n}º semestre.<br>Adicione as disciplinas do seu plano curricular, com as respectivas precedências.</div>`}</div>${uploadPanel('disciplinas')}`;
 }
 function sformSheet(){
@@ -783,7 +791,7 @@ function pgPrec(){
 const CATS=[['todos','Todos'],['aulas','Aulas'],['exercicios','Exercícios'],['livros','Livros'],['outros','Outros']];
 function pgMat(){
   if(!IDS.length)return emptyPg('Biblioteca de Materiais');
-  const id=(ui.matSubj&&S[ui.matSubj])?ui.matSubj:(state.enrolled[0]||IDS[0]);ui.matSubj=id;const all=state.materials[id]||[],q=(ui.matQ||'').trim().toLowerCase();
+  const id=(ui.matSubj&&S[ui.matSubj])?ui.matSubj:(state.enrolled[0]||IDS.find(i=>S[i].sem===state.currentSem)||IDS[0]);ui.matSubj=id;const all=state.materials[id]||[],q=(ui.matQ||'').trim().toLowerCase();
   const list=all.filter(m=>(ui.matCat==='todos'||m.cat===ui.matCat)&&(!q||m.name.toLowerCase().includes(q)));
   const opts=[...new Set([...state.enrolled,...Object.keys(state.materials).map(Number)])];
   const FOLD=[['todos','Todos os ficheiros'],['aulas','Apontamentos e slides'],['exercicios','Exercícios'],['livros','Livros'],['outros','Outros']];
@@ -800,7 +808,7 @@ function pgMat(){
   }
 
   return `<div class="head"><div><h1>Biblioteca de Materiais</h1><p>${esc(S[id].name)} · ${S[id].cr} créditos · Semestre ${S[id].sem}</p></div></div>
-  <div class="field" style="max-width:420px"><label for="ms">Disciplina</label><div class="inp"><select id="ms" data-change="mat-subj">${subjOpts(id,opts)}</select></div></div>
+  <div class="field" style="max-width:420px"><label for="ms">Disciplina</label><div class="inp"><select id="ms" data-change="mat-subj">${subjOptsG(id)}</select></div></div>
   <div class="matgrid">
    <aside class="card flat stack" style="gap:8px;padding:12px" aria-label="Pastas">${FOLD.map(([k,l])=>`<button class="item" data-act="open-folder" data-k="${k}"><div class="folder">${ic('folder')}</div><div class="grow"><div class="t">${l}</div><div class="s">${cnt(k)} ${cnt(k)===1?'ficheiro':'ficheiros'}</div></div>${ic('cr')}</button>`).join('')}</aside>
    <section class="stack">
@@ -951,7 +959,7 @@ function pgDef(){
   const fld=(id,l,m,v)=>`<div class="field"><label for="${id}">${l}</label><div class="inp"><input id="${id}" data-model="${m}" value="${esc(v)}"></div></div>`;
   return `<div class="head"><div><h1>Definições</h1><p>O seu curso e a aparência.</p></div></div>
   <div class="grid g2"><section class="card stack"><h2>O meu curso</h2>${fld('p-n','Nome','prof.name',p.name)}${fld('p-u','Universidade','prof.uni',p.uni)}${fld('p-c','Curso','prof.course',p.course)}
-   <div class="field"><label for="p-s">Duração</label><div class="inp"><select id="p-s" data-model="prof.nsem">${[...Array(13)].map((_,i)=>`<option value="${i+2}" ${+p.nsem===i+2?'selected':''}>${i+2} semestres</option>`).join('')}</select></div></div>
+   <div class="field"><label for="p-s">Duração</label><div class="inp"><select id="p-s" data-model="prof.nsem">${[...Array(MAXSEM)].map((_,i)=>`<option value="${i+1}" ${+p.nsem===i+1?'selected':''}>${i+1} ${i?'semestres':'semestre'}</option>`).join('')}</select></div></div>
    <div class="field"><label for="p-cur">Semestre actual</label><div class="inp"><select id="p-cur" data-change="cur-sem">${semOpts(state.currentSem)}</select></div></div>
    <div><button class="btn" data-act="prof-save">Guardar</button></div></section>
   <section class="card stack"><h2>Aparência</h2><div class="pills">${[['system','Sistema'],['light','Claro'],['dark','Escuro']].map(([k,l])=>`<button class="pill" aria-pressed="${state.theme===k}" data-act="theme" data-k="${k}">${l}</button>`).join('')}</div>
@@ -1094,11 +1102,32 @@ const normAI=(kind,arr)=>arr.slice(0,80).map(x=>kind==='horario'
   ?{subject:String(x.subject||'').trim(),day:Math.min(4,Math.max(0,+x.day||0)),a:toMin(x.start),b:toMin(x.end),t:['T','P','L'].includes(x.type)?x.type:'T',r:String(x.room||'').trim()}
   :{name:String(x.name||'').trim(),sem:+x.sem||0,cr:Math.min(30,Math.max(1,+x.cr||4)),pre:Array.isArray(x.pre)?x.pre.map(String):[]}
 ).filter(x=>kind==='horario'?x.subject&&x.a!=null&&x.b!=null&&x.b-x.a>=10:x.name);
-async function aiRead(){
-  throw new Error('Não foi possível reconhecer este ficheiro automaticamente. Use um Excel (.xlsx), CSV ou PDF com texto, ou adicione manualmente. As fotos e imagens ainda não são lidas nesta versão.');
+const blobToB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(b)});
+async function shrinkBlob(b,maxW,q){const bm=await createImageBitmap(b),k=Math.min(1,maxW/bm.width),cv=document.createElement('canvas');cv.width=Math.round(bm.width*k);cv.height=Math.round(bm.height*k);const x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,cv.width,cv.height);x.drawImage(bm,0,0,cv.width,cv.height);return await toBlob(cv,q)}
+async function packImages(blobs){
+  const out=[];let total=0;
+  for(const b of blobs.slice(0,3)){let w=1500,q=.8,x=await shrinkBlob(b,w,q);
+    while(x.size>1100000&&w>700){w-=200;q=Math.max(.6,q-.05);x=await shrinkBlob(b,w,q)}
+    const d=await blobToB64(x);if(total+d.length>3400000)break;total+=d.length;out.push({type:'image/jpeg',data:d})}
+  return out;
 }
-async function runUpload(kind){
-  const f=ui.upFile,up=ui.up;if(!f)return;up.busy=true;up.kind=kind;up.items=null;up.how='';up.msg='A ler o ficheiro…';render();
+const AI_ERR={not_configured:'A leitura por IA ainda não está activada neste site.',quota_not_set:'A leitura por IA ainda não está activada neste site.',auth:'A sessão expirou. Entre de novo.',limit:'Atingiu o limite diário de leituras por IA. Tente amanhã, use Excel, CSV ou PDF com texto, ou adicione manualmente.',too_large:'O ficheiro é demasiado grande para a leitura por IA. Use uma imagem mais pequena.',ai_busy:'O serviço de IA está ocupado. Tente de novo dentro de instantes.',parse:'A IA não devolveu dados legíveis. Tente de novo ou adicione manualmente.'};
+async function aiRead(kind,text,getImgs){
+  if(!ui.aiOn)throw new Error('Não foi possível reconhecer este ficheiro automaticamente. Use um Excel (.xlsx), CSV ou PDF com texto, ou adicione manualmente.');
+  const {data:{session}}=await sb.auth.getSession();if(!session)throw new Error(AI_ERR.auth);
+  const hasText=text.trim().length>=40;let images=[];
+  if(!hasText||kind==='horario'){try{images=await packImages(await getImgs())}catch(e){}}
+  if(!hasText&&!images.length)throw new Error('Não foi possível ler o conteúdo do ficheiro.');
+  const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),45000);let r,j=null;
+  try{r=await fetch('/api/read',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({kind,text:hasText?text.slice(0,15000):'',images}),signal:ctl.signal})}
+  catch(e){throw new Error('Não foi possível contactar o serviço de leitura por IA. Tente de novo.')}
+  finally{clearTimeout(tm)}
+  try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error(AI_ERR[j&&j.error]||'A leitura por IA falhou. Tente de novo ou adicione manualmente.');
+  return normAI(kind,(j&&j.items)||[]);
+}
+async function runUpload(kind,forceAI){
+  const f=ui.upFile,up=ui.up;if(!f)return;const prev=up.items,prevHow=up.how;up.busy=true;up.kind=kind;up.items=null;up.how='';up.msg='A ler o ficheiro…';render();
   try{
     const nm=f.name.toLowerCase(),isImg=(f.type||'').startsWith('image/'),isPdf=nm.endsWith('.pdf')||f.type==='application/pdf',isXl=/\.(xlsx|xls|csv)$/.test(nm);
     if(!isImg&&!isPdf&&!isXl)throw new Error('Formato não suportado. Use PDF, Excel (.xlsx ou .csv) ou uma imagem.');
@@ -1106,11 +1135,11 @@ async function runUpload(kind){
     if(isImg)getImgs=async()=>[await imgBlob(f)];
     else if(isPdf){const r=await pdfData(f);text=r.text;getImgs=r.getImgs}
     else text=await sheetText(f);
-    let items=text.trim().length>=20?(kind==='horario'?parseSchedule(text):parseSubjects(text)):[],how='local';
+    let items=(!forceAI&&text.trim().length>=20)?(kind==='horario'?parseSchedule(text):parseSubjects(text)):[],how='local';
     if(!items.length){up.msg='A reconhecer com IA…';render();items=await aiRead(kind,text,getImgs);how='ia'}
     if(!items.length)throw new Error('Não foi encontrado nenhum dado reconhecível neste ficheiro.');
     up.items=items.slice(0,80).map(x=>kind==='horario'?x:Object.assign({},x,{sem:Math.min(state.nsem,Math.max(1,x.sem||ui.semTab))}));up.how=how;up.msg='';
-  }catch(e){up.items=null;up.msg=(e&&e.message)||'Não foi possível ler o ficheiro.';if(e&&e.code==='not_granted')up.msg='A leitura por IA não foi autorizada.'}
+  }catch(e){up.items=forceAI?prev:null;if(forceAI)up.how=prevHow;up.msg=(e&&e.message)||'Não foi possível ler o ficheiro.';if(e&&e.code==='not_granted')up.msg='A leitura por IA não foi autorizada.'}
   up.busy=false;render();
 }
 function uploadPanel(kind){
@@ -1121,7 +1150,7 @@ function uploadPanel(kind){
   return `<div class="card stack"><h3>${h?'Importar horário':'Importar lista de disciplinas'}</h3>
    ${up.busy?`<div class="muted small" role="status">${esc(up.msg)}</div>`:''}
    ${!up.busy&&up.msg?`<div class="hint warn" role="alert">${ic('alert')}<div>${esc(up.msg)}</div></div><div><button class="btn ghost sm" data-act="up-cancel">Fechar</button></div>`:''}
-   ${items?`<div class="stack"><div class="eyebrow">Reconhecido ${up.how==='ia'?'com IA':'automaticamente'}: ${items.length} ${h?'aulas':'disciplinas'}. Confira e remova o que estiver errado.</div><div class="list">${rows}</div><div class="row wrap"><button class="btn" data-act="up-ok" data-k="${kind}">${h?'Importar para o '+ui.horSem+'º semestre':'Importar disciplinas'}</button><button class="btn ghost" data-act="up-cancel">Cancelar</button></div></div>`:''}</div>`;
+   ${items?`<div class="stack"><div class="eyebrow">Reconhecido ${up.how==='ia'?'com IA':'automaticamente'}: ${items.length} ${h?'aulas':'disciplinas'}. Confira e remova o que estiver errado.</div><div class="list">${rows}</div><div class="row wrap"><button class="btn" data-act="up-ok" data-k="${kind}">${h?'Importar para o '+ui.horSem+'º semestre':'Importar disciplinas'}</button>${ui.aiOn&&up.how!=='ia'?`<button class="btn ghost" data-act="up-ai" data-k="${kind}">${ic('target')}Reconhecer com IA</button>`:''}<button class="btn ghost" data-act="up-cancel">Cancelar</button></div></div>`:''}</div>`;
 }
 function importItems(kind){
   const items=ui.up.items||[];if(!items.length)return;const f=ui.upFile;
@@ -1218,6 +1247,8 @@ document.addEventListener('click',e=>{
    case 'nav':go(t.dataset.r);break;
    case 'drawer':ui.drawer=!ui.drawer;render();break;
    case 'bell':toast('Sem notificações novas.');break;
+   case 'sem-add':if(state.nsem>=MAXSEM){toast('O máximo é '+MAXSEM+' semestres.');break}state.nsem++;ui.semTab=state.nsem;save();render();toast('Semestre '+state.nsem+' adicionado.');break;
+   case 'sem-del':if(!canDelSem())break;state.nsem--;if(ui.semTab>state.nsem)ui.semTab=state.nsem;if(ui.horSem>state.nsem)ui.horSem=state.nsem;save();render();break;
    case 'semtab':ui.semTab=+t.dataset.n;render();break;
    case 'subj':ui.modal={t:'subj',id};ui.finalGrade=undefined;render();break;
    case 'close-modal':ui.modal=null;render();break;
@@ -1287,10 +1318,12 @@ document.addEventListener('click',e=>{
    case 'type-del':state.evalTypes=state.evalTypes.filter(x=>x!==t.dataset.t);save();render();break;
    case 'prof-save':{const p=ui.prof;mutate(()=>{state.user.full=(p.name||'').trim()||state.user.full;state.user.name=state.user.full.split(' ')[0];state.user.uni=p.uni;state.user.course=p.course;state.nsem=Math.max(+p.nsem,state.currentSem,...state.subjects.map(x=>x.sem))},'Perfil guardado');ui.prof=null;render();break}
    case 'logout':logout();break;
+   case 'resend':resendConfirm();break;
    case 'pw-change':changePw();break;
    case 'export':saveBlob('smartstudy-dados.json',new Blob([JSON.stringify(state,null,1)],{type:'application/json'}));break;
    case 'auth-mode':ui.auth.mode=t.dataset.k;ui.auth.err='';ui.auth.pw=ui.auth.pw2='';render();break;
    case 'up-rm':ui.up.items.splice(id,1);if(!ui.up.items.length)ui.up.items=null;render();break;
+   case 'up-ai':runUpload(t.dataset.k,true);break;
    case 'up-cancel':ui.up.items=null;ui.upFile=null;ui.up.msg='';render();break;
    case 'up-ok':importItems(t.dataset.k);break;
    case 'wipe':if(!ui.wipe){ui.wipe=true;render();break}state=blank();state.user.email=SESSION;ui.wipe=false;ui.prof=null;ui.route='inicio';ui.setup={name:'',uni:'',course:'',nsem:8,cur:1};save();render();break;
@@ -1304,6 +1337,7 @@ document.addEventListener('focusout',e=>{if(e.target.id==='gs')setTimeout(()=>{c
 (function boot(){
   const h=location.hash.slice(1);ui.evalForm.data=addDays(10);render();
   if(!CONFIGURED)return;
+  fetch('/api/read').then(r=>r.ok?r.json():null).then(j=>{ui.aiOn=!!(j&&j.enabled);if(SESSION)render()}).catch(()=>{});
   if(!window.supabase){ui.booted=true;ui.auth.err='Não foi possível carregar o Supabase. Verifique a ligação à internet.';render();return}
   sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   sb.auth.onAuthStateChange((ev,sess)=>{setTimeout(()=>onAuth(ev,sess),0)});

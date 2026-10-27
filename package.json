@@ -2,6 +2,11 @@
   "name": "smartstudy",
   "version": "1.0.0",
   "private": true,
-  "description": "SmartStudy: organizador académico (Supabase + Vercel)",
-  "scripts": { "build": "node build.js" }
+  "description": "SmartStudy: organizador acad\u00e9mico (Supabase + Vercel)",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
