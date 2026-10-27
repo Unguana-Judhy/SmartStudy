@@ -1,5 +1,7 @@
+
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>SmartStudy</title>
+<meta name="smartstudy-versao" content="2026-10-27-b">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -585,7 +587,9 @@ const PT=m=>{m=(m||'').toLowerCase();
   if(m.includes('invalid login'))return 'Email ou palavra-passe incorrectos.';
   if(m.includes('not confirmed'))return 'Confirme primeiro o seu email: abra o link que lhe enviámos.';
   if(m.includes('already registered'))return 'Já existe uma conta com este email. Entre ou recupere a palavra-passe.';
-  if(m.includes('rate limit')||m.includes('too many')||m.includes('security purposes'))return 'Demasiados pedidos. Aguarde alguns minutos e tente de novo.';
+  if(m.includes('email rate limit'))return 'O limite de emails de confirmação foi atingido. Aguarde cerca de 1 hora e tente de novo, ou peça ao administrador do site para configurar o envio de emails.';
+  if(m.includes('security purposes'))return 'Por segurança, aguarde cerca de 1 minuto antes de pedir outro email.';
+  if(m.includes('rate limit')||m.includes('too many'))return 'Demasiados pedidos. Aguarde alguns minutos e tente de novo.';
   if(m.includes('at least'))return 'A palavra-passe é demasiado curta.';
   if(m.includes('different from the old')||m.includes('same password'))return 'A nova palavra-passe tem de ser diferente da actual.';
   if(m.includes('fetch')||m.includes('network'))return 'Sem ligação ao servidor. Verifique a internet.';
@@ -608,7 +612,7 @@ async function onAuth(ev,sess){
   ui.booted=true;render();
 }
 async function doAuth(){
-  const a=ui.auth;if(a.busy)return;const email=(a.email||'').trim().toLowerCase(),m=a.mode;a.err='';
+  const a=ui.auth;if(a.busy)return;if(a.cool&&Date.now()<a.cool&&a.mode!=='login'&&a.mode!=='newpw'){a.err='Aguarde '+Math.ceil((a.cool-Date.now())/1000)+' segundos antes de tentar de novo.';return render()}const email=(a.email||'').trim().toLowerCase(),m=a.mode;a.err='';
   if(m!=='newpw'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){a.err='Indique um email válido.';return render()}
   if(m!=='reset'){if(m==='login'){if(!a.pw){a.err='Indique a palavra-passe.';return render()}}else if((a.pw||'').length<8){a.err='A palavra-passe deve ter pelo menos 8 caracteres.';return render()}}
   if((m==='signup'||m==='newpw')&&a.pw!==a.pw2){a.err='As palavras-passe não coincidem.';return render()}
@@ -623,7 +627,7 @@ async function doAuth(){
       if(error&&/rate|many|security/i.test(error.message))a.err=PT(error.message);else{a.mode='notice';a.notice='Se existir uma conta com '+email+', enviámos-lhe um link para criar uma nova palavra-passe.'}}
     else if(m==='newpw'){const {error}=await sb.auth.updateUser({password:a.pw});if(error)a.err=PT(error.message);else{a.mode='login';toast('Palavra-passe actualizada.');try{history.replaceState(null,'',redirectUrl())}catch(e){}}}
   }catch(e){a.err=PT(e&&e.message)}
-  a.busy=false;a.pw=a.pw2='';render();
+  if((m==='signup'||m==='reset')&&(a.mode==='notice'||a.err))a.cool=Date.now()+60000;a.busy=false;a.pw=a.pw2='';render();
 }
 async function changePw(){
   const p=ui.pw;p.err='';
@@ -688,7 +692,7 @@ function pgInicio(){
 
 function pgDisciplinas(){
   const n=ui.semTab,list=IDS.filter(i=>S[i].sem===n),cr=list.reduce((a,i)=>a+S[i].cr,0);
-  return `<div class="head"><div><h1>Disciplinas</h1><p>${esc(state.user.course)} · ${cr} créditos neste semestre</p></div><div class="row wrap"><button class="btn ghost" data-act="enrol-open">${ic('check')}Inscrever</button><label class="btn ghost" style="cursor:pointer">${ic('upload')}Importar PDF/Excel<input type="file" id="import-subj-file" accept=".pdf,.xlsx,.csv,image/*" style="display:none" data-change="import-subj"></label><button class="btn" data-act="sform">${ic('plus')}Nova disciplina</button></div></div>
+  return `<div class="head"><div><h1>Disciplinas</h1><p>${esc(state.user.course)} · ${cr} créditos neste semestre</p></div><div class="row wrap"><button class="btn ghost" data-act="enrol-open">${ic('check')}Inscrever</button><label class="btn ghost" style="cursor:pointer">${ic('upload')}Importar PDF/Excel<input type="file" id="import-subj-file" accept=".pdf,.xlsx,.csv" style="display:none" data-change="import-subj"></label><button class="btn" data-act="sform">${ic('plus')}Nova disciplina</button></div></div>
   <div class="tabs" role="tablist">${SEMS().map(s=>`<button role="tab" aria-selected="${s===n}" data-act="semtab" data-n="${s}">Semestre ${s}${s===state.currentSem?' •':''}</button>`).join('')}</div>
   <div class="list">${list.length?list.map(i=>`<button class="item" data-act="subj" data-id="${i}"><div class="grow"><div class="code">${S[i].code}</div><div class="t">${esc(S[i].name)}</div><div class="s">${S[i].cr} créditos${S[i].pre.length?' · Precedente: '+S[i].pre.map(p=>esc(S[p].name)).join(', '):UNTIL[i]?' · '+ruleText(i):''}</div></div>${isLate(i)?'<span class="chip bad">Em atraso</span>':''}${chip(i)}${ic('cr')}</button>`).join(''):`<div class="empty">Ainda não há disciplinas no ${n}º semestre.<br>Adicione as disciplinas do seu plano curricular, com as respectivas precedências.</div>`}</div>${uploadPanel('disciplinas')}`;
 }
@@ -838,7 +842,7 @@ function pgHorario(){
   return `<div class="head"><div><h1>Horário Semestral</h1><p>As aulas são a base fixa. O estudo ocupa os horários livres, sem tempos de descanso obrigatórios. Se quiser descanso, registe-o como actividade.</p></div>
    <div class="row wrap">
      <div class="inp" style="min-width:150px"><select aria-label="Semestre" data-change="hor-sem">${semOpts(ui.horSem)}</select></div>
-     <label class="btn ghost sm" style="cursor:pointer">${ic('upload')}Carregar/Alterar Horário (PDF/Img)<input type="file" id="schedule-file-input" style="display:none" accept="image/*,.pdf,.xlsx,.csv" data-change="upload-schedule"></label>
+     <label class="btn ghost sm" style="cursor:pointer">${ic('upload')}Carregar/Alterar Horário (PDF/Excel)<input type="file" id="schedule-file-input" style="display:none" accept=".pdf,.xlsx,.csv" data-change="upload-schedule"></label>
    </div></div>
   ${scheduleFile?`<div class="card row between"><div><b>Horário carregado:</b> ${esc(scheduleFile.name)}</div><div><button class="btn sm danger" data-act="del-schedule-file">Remover</button></div></div>`:''}
   ${uploadPanel('horario')}
@@ -965,8 +969,6 @@ function pgDef(){
 }
 
 /* ---- Importação por ficheiro ---- */
-const toBlob=(cv,q=.85)=>new Promise(r=>cv.toBlob(r,'image/jpeg',q));
-async function imgBlob(f,maxW=1800){const bm=await createImageBitmap(f),k=Math.min(1,maxW/bm.width),cv=document.createElement('canvas');cv.width=Math.round(bm.width*k);cv.height=Math.round(bm.height*k);const x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,cv.width,cv.height);x.drawImage(bm,0,0,cv.width,cv.height);return toBlob(cv)}
 async function loadPdfjs(){
   if(globalThis.__pdfjsLib)return globalThis.__pdfjsLib;
   const bin=Uint8Array.from(atob(document.getElementById('pdfjs-gz').textContent.trim()),c=>c.charCodeAt(0));
@@ -981,8 +983,7 @@ async function pdfData(f){
   const L=await loadPdfjs();
   const doc=await L.getDocument({data:new Uint8Array(await f.arrayBuffer()),isEvalSupported:false,useSystemFonts:true}).promise;let text='';
   for(let p=1;p<=Math.min(doc.numPages,30);p++){const pg=await doc.getPage(p);text+=(await pg.getTextContent()).items.map(i=>i.str+(i.hasEOL?'\n':' ')).join('')+'\n'}
-  const getImgs=async()=>{const imgs=[];for(let p=1;p<=Math.min(doc.numPages,3);p++){const pg=await doc.getPage(p),vp=pg.getViewport({scale:1.6}),cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;const cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);await pg.render({canvasContext:cx,viewport:vp}).promise;imgs.push(await toBlob(cv))}return imgs};
-  return {text,getImgs};
+  return {text};
 }
 async function unzip(buf){
   const u8=new Uint8Array(buf),dv=new DataView(buf);let e=u8.length-22;while(e>=0&&dv.getUint32(e,true)!==0x06054b50)e--;
@@ -1013,11 +1014,9 @@ async function sheetText(f){
   return out;
 }
 const norm=t=>(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
-const PROMPT_D='Extrai a lista de disciplinas de um plano curricular. Responde APENAS com JSON: um array de objectos {"name":string,"sem":número do semestre (1 a 14; se não houver, usa 0),"cr":créditos (número; se não houver, 4),"pre":[nomes exactos de disciplinas precedentes, se indicados]}. Mantém os nomes como no documento. Não inventes disciplinas.';
-const PROMPT_H='Extrai as aulas de um horário semanal. Responde APENAS com JSON: um array de objectos {"subject":nome da disciplina,"day":0 a 4 (0=Segunda, 4=Sexta),"start":"HH:MM" (24h),"end":"HH:MM" (24h),"type":"T" (teórica), "P" (prática) ou "L" (laboratório; se não souberes usa "T"),"room":sala ou ""}. Usa as horas exactas indicadas (por exemplo 07:35). Ignora sábado e domingo. Não inventes aulas.';
 function matchSubj(name,sem){const n=norm(name);if(!n)return null;const pool=IDS.filter(i=>sem==null||S[i].sem===sem);
   return pool.find(i=>norm(S[i].name)===n)||pool.find(i=>{const m=norm(S[i].name);return m.length>3&&(m.includes(n)||n.includes(m))})||IDS.find(i=>norm(S[i].name)===n)||null}
-/* ---- Leitura automática local (rápida, sem IA) ---- */
+/* ---- Leitura automática local (no próprio navegador) ---- */
 const DAYTOK=[['seg','segunda','segunda feira','2a','2a feira'],['ter','terca','terca feira','3a','3a feira'],['qua','quarta','quarta feira','4a','4a feira'],['qui','quinta','quinta feira','5a','5a feira'],['sex','sexta','sexta feira','6a','6a feira']];
 const dayOf=t=>{const n=norm(t);return DAYTOK.findIndex(a=>a.includes(n))};
 const TRX=/(\d{1,2})[:h.](\d{2})?\s*(?:-|–|—|às|as|a|até|ate)\s*(\d{1,2})(?:[:h.](\d{2})?)?(?!\d)/i;
@@ -1090,27 +1089,19 @@ function parseSubjects(text){
   if(tmp.length>=2)tmp.forEach(([n,sm,cr])=>push(n,sm,cr));
   return out;
 }
-const normAI=(kind,arr)=>arr.slice(0,80).map(x=>kind==='horario'
-  ?{subject:String(x.subject||'').trim(),day:Math.min(4,Math.max(0,+x.day||0)),a:toMin(x.start),b:toMin(x.end),t:['T','P','L'].includes(x.type)?x.type:'T',r:String(x.room||'').trim()}
-  :{name:String(x.name||'').trim(),sem:+x.sem||0,cr:Math.min(30,Math.max(1,+x.cr||4)),pre:Array.isArray(x.pre)?x.pre.map(String):[]}
-).filter(x=>kind==='horario'?x.subject&&x.a!=null&&x.b!=null&&x.b-x.a>=10:x.name);
-async function aiRead(){
-  throw new Error('Não foi possível reconhecer este ficheiro automaticamente. Use um Excel (.xlsx), CSV ou PDF com texto, ou adicione manualmente. As fotos e imagens ainda não são lidas nesta versão.');
-}
 async function runUpload(kind){
   const f=ui.upFile,up=ui.up;if(!f)return;up.busy=true;up.kind=kind;up.items=null;up.how='';up.msg='A ler o ficheiro…';render();
   try{
     const nm=f.name.toLowerCase(),isImg=(f.type||'').startsWith('image/'),isPdf=nm.endsWith('.pdf')||f.type==='application/pdf',isXl=/\.(xlsx|xls|csv)$/.test(nm);
-    if(!isImg&&!isPdf&&!isXl)throw new Error('Formato não suportado. Use PDF, Excel (.xlsx ou .csv) ou uma imagem.');
-    let text='',getImgs=async()=>[];
-    if(isImg)getImgs=async()=>[await imgBlob(f)];
-    else if(isPdf){const r=await pdfData(f);text=r.text;getImgs=r.getImgs}
+    if(isImg)throw new Error('As imagens não podem ser lidas automaticamente. Use um PDF com texto, um Excel (.xlsx) ou um CSV, ou adicione os dados manualmente.');
+    if(!isPdf&&!isXl)throw new Error('Formato não suportado. Use PDF com texto, Excel (.xlsx) ou CSV.');
+    let text='';
+    if(isPdf)text=(await pdfData(f)).text;
     else text=await sheetText(f);
     let items=text.trim().length>=20?(kind==='horario'?parseSchedule(text):parseSubjects(text)):[],how='local';
-    if(!items.length){up.msg='A reconhecer com IA…';render();items=await aiRead(kind,text,getImgs);how='ia'}
-    if(!items.length)throw new Error('Não foi encontrado nenhum dado reconhecível neste ficheiro.');
+    if(!items.length)throw new Error('Não foi possível reconhecer dados neste ficheiro. Use um Excel (.xlsx), CSV ou PDF com texto, ou adicione manualmente.');
     up.items=items.slice(0,80).map(x=>kind==='horario'?x:Object.assign({},x,{sem:Math.min(state.nsem,Math.max(1,x.sem||ui.semTab))}));up.how=how;up.msg='';
-  }catch(e){up.items=null;up.msg=(e&&e.message)||'Não foi possível ler o ficheiro.';if(e&&e.code==='not_granted')up.msg='A leitura por IA não foi autorizada.'}
+  }catch(e){up.items=null;up.msg=(e&&e.message)||'Não foi possível ler o ficheiro.'}
   up.busy=false;render();
 }
 function uploadPanel(kind){
@@ -1121,7 +1112,7 @@ function uploadPanel(kind){
   return `<div class="card stack"><h3>${h?'Importar horário':'Importar lista de disciplinas'}</h3>
    ${up.busy?`<div class="muted small" role="status">${esc(up.msg)}</div>`:''}
    ${!up.busy&&up.msg?`<div class="hint warn" role="alert">${ic('alert')}<div>${esc(up.msg)}</div></div><div><button class="btn ghost sm" data-act="up-cancel">Fechar</button></div>`:''}
-   ${items?`<div class="stack"><div class="eyebrow">Reconhecido ${up.how==='ia'?'com IA':'automaticamente'}: ${items.length} ${h?'aulas':'disciplinas'}. Confira e remova o que estiver errado.</div><div class="list">${rows}</div><div class="row wrap"><button class="btn" data-act="up-ok" data-k="${kind}">${h?'Importar para o '+ui.horSem+'º semestre':'Importar disciplinas'}</button><button class="btn ghost" data-act="up-cancel">Cancelar</button></div></div>`:''}</div>`;
+   ${items?`<div class="stack"><div class="eyebrow">Reconhecido automaticamente: ${items.length} ${h?'aulas':'disciplinas'}. Confira e remova o que estiver errado.</div><div class="list">${rows}</div><div class="row wrap"><button class="btn" data-act="up-ok" data-k="${kind}">${h?'Importar para o '+ui.horSem+'º semestre':'Importar disciplinas'}</button><button class="btn ghost" data-act="up-cancel">Cancelar</button></div></div>`:''}</div>`;
 }
 function importItems(kind){
   const items=ui.up.items||[];if(!items.length)return;const f=ui.upFile;
